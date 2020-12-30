@@ -1,6 +1,10 @@
 package Chip8
 
-import "github.com/mellotonio/go-chip8/Chip8/Display"
+import (
+	"io/ioutil"
+
+	"github.com/mellotonio/go-chip8/Chip8/Display"
+)
 
 // Uso de memória
 // 0x000-0x1FF - Reservado para o interpretador do Chip-8 -> 0 ~ 512 (bytes)
@@ -23,7 +27,7 @@ type chip_8_VM struct {
 func Start() *chip_8_VM {
 	var memory [4096]byte
 
-	for i := 0; i < 80; i++ {
+	for i := 0; i < Display.FontOffset; i++ {
 		memory[i] = Display.FontSet[i]
 	}
 
@@ -39,4 +43,23 @@ func Start() *chip_8_VM {
 		keypad:          [16]byte{},
 	}
 
+}
+
+// Pega o caminho da ROM e carrega ela no Chip8
+func (chip_8 *chip_8_VM) LoadROM(path string) error {
+	rom, err := ioutil.ReadFile(path)
+
+	if err != nil {
+		return err
+	}
+
+	if len(rom) >= 3585 {
+		panic("ERROR: ROM TOO LARGE - MAX SIZE: 3584") // Se a ROM ultrapassar o espaço dedicado para o interpretador ocorrerá um "panic"
+	}
+
+	for i := 0; i < len(rom); i++ {
+		chip_8.memory[Display.FontOffset+i] = rom[i] // Memoria começa 80 + x, tirando espaço reservado para as fontes (80 bytes)
+	}
+
+	return nil
 }
