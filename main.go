@@ -10,18 +10,19 @@ import (
 func main() {
 
 	if len(os.Args) != 2 {
-		fmt.Println("incorrect usage. Usage: `chippy path/to/rom`")
-		return
+		fmt.Println("incorrect usage. Usage: `chipo path/to/rom`")
+		os.Exit(1)
 	}
 
 	pathToROM := os.Args[1]
 
-	chip_8 := Chip8.Start()
+	chip_8, err := Chip8.Start(pathToROM)
 
-	// Tenta colocar a ROM no Chip8
-	if err := chip_8.LoadROM(pathToROM); err != nil {
-		fmt.Printf("\nerror loading ROM: %v\n", err)
+	if err != nil {
+		fmt.Printf("\nerror creating a new chip-8: %v\n", err)
 		os.Exit(1)
 	}
+
+	fmt.Println(chip_8)
 
 }
