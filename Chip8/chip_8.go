@@ -1,6 +1,7 @@
 package Chip8
 
 import (
+	"fmt"
 	"io/ioutil"
 
 	"github.com/mellotonio/go-chip8/Chip8/Display"
@@ -71,4 +72,35 @@ func (chip_8 *chip_8_VM) LoadROM(path string) error {
 	}
 
 	return nil
+}
+
+func (chip_8 *chip_8_VM) debug() {
+	fmt.Printf(`
+	opcode: %x
+	pc: %d
+	sp: %d
+	i: %d
+	Registers:
+	V0: %d
+	V1: %d
+	V2: %d
+	V3: %d
+	V4: %d
+	V5: %d
+	V6: %d
+	V7: %d
+	V8: %d
+	V9: %d
+	VA: %d
+	VB: %d
+	VC: %d
+	VD: %d
+	VE: %d
+	VF: %d`,
+		chip_8.opcode, chip_8.program_counter, chip_8.stack_pointer, chip_8.index,
+		chip_8.Vx[0], chip_8.Vx[1], chip_8.Vx[2], chip_8.Vx[3],
+		chip_8.Vx[4], chip_8.Vx[5], chip_8.Vx[6], chip_8.Vx[7],
+		chip_8.Vx[8], chip_8.Vx[9], chip_8.Vx[10], chip_8.Vx[11],
+		chip_8.Vx[12], chip_8.Vx[13], chip_8.Vx[14], chip_8.Vx[15],
+	)
 }
