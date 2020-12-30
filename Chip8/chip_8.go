@@ -74,6 +74,12 @@ func (chip_8 *chip_8_VM) LoadROM(path string) error {
 	return nil
 }
 
+func (chip_8 *chip_8_VM) MachineCycle() {
+	// Um opcode tem 2 bytes (16bit) de comprimento, por exemplo 0xA2F0 -> (0xA2 e 0xF0) -> e então transformar ele em um opcode válido
+	// Primeiro temos de realizar uma operação de shift na instrução atual, ex: 10100010 - 8bit => 10100010 <<8 => 1010001000000000
+	// Após isso temos de realizar uma operação OR para então termos os 16 bits necessarios para ser um opcode.
+}
+
 func (chip_8 *chip_8_VM) debug() {
 	fmt.Printf(`
 	opcode: %x
