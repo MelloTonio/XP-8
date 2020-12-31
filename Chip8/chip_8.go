@@ -260,21 +260,21 @@ func (chip_8 *chip_8_VM) parseOpcode() {
 		y = uint16(chip_8.Vx[y])
 
 		var pix uint16
-		height := chip_8.opcode & 0x000F
+		height := chip_8.opcode & 0x000F // Pegamos o N do "DXYN"
 		chip_8.Vx[0xF] = 0
 
 		for yPoint := uint16(0); yPoint < height; yPoint++ {
-			pix = uint16(chip_8.memory[chip_8.index+yPoint])
-			for xPoint := uint16(0); xPoint < 8; xPoint++ {
+			pix = uint16(chip_8.memory[chip_8.index+yPoint]) // Começamos no endereço que está no index
+			for xPoint := uint16(0); xPoint < 8; xPoint++ {  // Each sprite is 8 units wide
 				ind := (x + xPoint + ((y + yPoint) * 64))
 				if ind > uint16(len(chip_8.GetGraphics())) {
 					continue
 				}
-				if (pix & (0x80 >> xPoint)) != 0 {
-					if chip_8.GetGraphics()[ind] == 1 {
-						chip_8.Vx[0xF] = 1
+				if (pix & (0x80 >> xPoint)) != 0 { // ex: 1010101 & 1000000 -> 1010101 & 0100000 -> ....  verifica se cada pixel esta setado
+					if chip_8.GetGraphics()[ind] == 1 { // Pixel Collision
+						chip_8.Vx[0xF] = 1 // Set Collision
 					}
-					chip_8.gfx[ind] ^= 1
+					chip_8.gfx[ind] ^= 1 // wraps around the opposite side
 				}
 			}
 		}
