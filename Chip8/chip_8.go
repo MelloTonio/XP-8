@@ -22,7 +22,7 @@ type chip_8_VM struct {
 	stack_pointer   uint16        // Registro que guarda o ultimo endereço requisitado na pilha
 	gfx             [64 * 32]byte // Pixels da tela
 	key             [16]byte      // "16-key hexadecimal keypad for input"
-	drawFloag       bool
+	drawFlag        bool
 }
 
 // Inicialização do Chip8 com a fonte inicializada nos primeiros 80 bytes
@@ -78,6 +78,129 @@ func (chip_8 *chip_8_VM) MachineCycle() {
 	// Um opcode tem 2 bytes (16bit) de comprimento, por exemplo 0xA2F0 -> (0xA2 e 0xF0) -> e então transformar ele em um opcode válido
 	// Primeiro temos de realizar uma operação de shift na instrução atual, ex: 10100010 - 8bit => 10100010 <<8 => 1010001000000000
 	// Após isso temos de realizar uma operação OR para então termos os 16 bits necessarios para ser um opcode.
+
+	// Operação OR vai pegar os "0" do lado direito e transformar no valor correspondente do byte
+	chip_8.opcode = uint16(chip_8.memory[chip_8.program_counter])<<8 | uint16(chip_8.memory[chip_8.program_counter+1])
+	chip_8.drawFlag = false
+
+	chip_8.parseOpcode()
+}
+
+func (chip_8 *chip_8_VM) parseOpcode() {
+
+	// BIT MASK - Most significant 4 bits
+	// Ex.      1001111111111111
+	//       &  1111000000000000 -> 0xF000
+	// result: (1001)000000000000 ->  Esses 4 primeiros numeros servirão para dar match na operação que o processador deve realizar
+	switch chip_8.opcode & 0xF000 {
+
+	case 0x0000:
+		// Bit mask para os primeiros 8 bits - 11111111 == 255, ou seja, este switch abrange de 0 até 255
+		switch chip_8.opcode & 0x00FF {
+
+		// Case 224
+		case 0x00E0:
+			// Comando que limpa a tela
+		// Case 238
+		case 0x00EE:
+			// Retorna de uma subrotina
+		}
+
+	// ex: irá ser comparado os 4 primeiros recebidos do bitwise do opcode com os 4 primeiros desse case, no caso = (0001)...
+	case 0x1000:
+		// 1NNN -> Pula pro endereço nnn
+	case 0x2000:
+		// 2NNN -> Executa subrotina começando no endereço NNN
+	case 0x3000:
+		// 3NNN -> Pula a proxima instrução se o valor do registrador Vx == NN
+	case 0x4000:
+		// 4NNN -> Pula a proxima instrução se o valor do registrador Vx != NN
+	case 0x5000:
+		// 5XY0 -> Pula a proxima instrução se o valor do registrador Vx != Vy
+	case 0x6000:
+		// 6XNN -> Guarda o numero NN no registrador Vx
+	case 0x7000:
+		// 7XNN -> Adiciona o valor NN no registrador Vx
+	case 0x8000:
+		// Bitmask para os primeiros 4 bits
+		// Apos verificar se o opcode se encaixa no case 0x8000 (1000000000000000)
+		// Temos que fazer outro switch pegando os primeiros 4 numeros (binario) do opcode
+		// e comparar em qual instrução ele se encaixa
+		switch chip_8.opcode & 0x000F {
+		case 0x0000:
+			// 8XY0 -> Guarda o valor do registrador Vy no registrador Vx
+		case 0x0001:
+			// 8XY1 -> Transforma Vx em Vx ou Vy
+		case 0x0002:
+			// 8XY2 -> Transforma Vx em Vx e Vy
+		case 0x0003:
+			// 8XY3 -> Transforma Vx em Vx xor Vy
+		case 0x0004:
+			// 8XY4 -> Set Vx = Vx + Vy, set VF = carry.
+			// se o resultado for acima de 8 bits, a flag sera setada = 1, senão 0; Apenas os 8 "menores" bits sao mantidos no Vx
+		case 0x0005:
+			// 8XY5 -> Set Vx = Vx - Vy, set VF = NOT borrow.
+			// Se Vx > Vy, a flag sera setada = 1, senão a flag será 0, resultado guardado em Vx
+		case 0x0006:
+			// 8XY6 -> Guarda o valor do registro Vy shifted 1 bit para direita no registro Vx
+			// Seta a flag para o "least significant" bit no shift
+		case 0x0007:
+			// 8XY7 -> Set Vx = Vy - Vx, set VF = NOT borrow.
+			// Vy > Vx, flag = 1, senão flag = 0, então Vx - Vy, guarda em Vx
+		case 0x000E:
+			// 8XYE -> Store the value of register VY shifted left one bit in register VX
+			// Set register VF to the most significant bit prior to the shift
+		}
+	case 0x9000:
+		// 9XY0 -> Pula a proxima instrução se o valor de Vx != valor de Vy
+
+	case 0xA000:
+		// ANNN -> Guarda o endereço de memoria NNN no registro I(ndex)
+	case 0xB000:
+		// BNNN -> Pula para o endereço NNN	+ V0
+	case 0xC000:
+		// CXNN -> Seta Vx como um numero aleatorio com a mascara de NN
+	case 0xD000:
+		// DXYN -> Desenha um spirte na posição Vx,Vy com N bytes, começando no endereço guardado no I(ndex)
+		// Setar flag como 1 se tem pixels que serão "desligados", se não flag = 0
+	case 0xE000:
+		// Bitmask com 8 primeiros bits
+		switch chip_8.opcode & 0x00FF {
+		case 0x009E:
+			// EX9E -> Pula a proxima instrução se a tecla correspondente ao valor que está no registro Vx é pressionada
+		case 0x00A1:
+			// EXA1 -> Pula a proxima instrução se a tecla correspondente ao valor que está no registro Vx não é pressionada
+		}
+	case 0xF000:
+		// Bitmask com 8 primeiros bits
+		switch chip_8.opcode & 0x00FF {
+		case 0x0007:
+			// FX07 -> Guarda o valor atual do delay timer no registrador Vx
+		case 0x000A:
+			// FX0A -> Aguarda uma tecla ser pressionada para guardar o resultado no registrador VX
+		case 0x0015:
+			// FX15 -> Seta o Delay timer para o valor do registro Vx
+		case 0x0018:
+			// FX18 -> Seta o valor do sound timer para o valor do registro Vx
+		case 0x001E:
+			// FX1E -> Adiciona o valor que esta no registrador Vx no registro I(ndex)
+		case 0x0029:
+			// FX29 -> Seta o Valor i(ndex) para o endereço de memoria do sprite correspondente ao digito hexadecimal guardado em Vx
+		case 0x0033:
+			// FX33 -> Store the binary-coded decimal equivalent of the value stored in register VX at addresses I, I+1, and I+2
+		case 0x0055:
+			// FX55 -> Store the values of registers V0 to VX inclusive in memory starting at address I
+			// I is set to I + X + 1 after operation
+		case 0x0065:
+			// FX65 -> Fill registers V0 to VX inclusive with the values stored in memory starting at address I
+			// I is set to I + X + 1 after operation
+		default:
+			fmt.Printf("unknown opcode: %x\n", chip_8.opcode&0x00FF)
+		}
+	default:
+		fmt.Printf("unknown opcode: %x\n", chip_8.opcode&0x00FF)
+
+	}
 }
 
 func (chip_8 *chip_8_VM) debug() {

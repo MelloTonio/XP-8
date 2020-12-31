@@ -25,4 +25,8 @@ func main() {
 
 	fmt.Println(chip_8)
 
+	for {
+		chip_8.MachineCycle()
+	}
+
 }
