@@ -21,6 +21,9 @@ type chip_8_VM struct {
 	program_counter uint16        // Usado para guardar o endereço atual da instrução que está sendo executada (0x000 - 0 => 0xFFF - 4095)
 	stack           [16]uint16    // Stack para "acumular" instruções
 	stack_pointer   uint16        // Registro que guarda o ultimo endereço requisitado na pilha
+	delayTimer      byte          // 8-bit delay timer que conta de 60 até 0 (hertz)
+	soundTimer      byte          // 8-bit sound timer que conta de 60 até 0 (hertz)
+	timerSpeed      uint16        // timer speed
 	gfx             [64 * 32]byte // Pixels da tela
 	key             [16]byte      // "16-key hexadecimal keypad for input"
 	drawFlag        bool
@@ -255,63 +258,118 @@ func (chip_8 *chip_8_VM) parseOpcode() {
 		// DXYN -> Desenha um sprite na posição Vx,Vy com N bytes, começando no endereço guardado no I(ndex)
 		// Setar flag como 1 se tem pixels que serão "desligados", se não flag = 0
 
-		// Borrowed from Chippy === to learn...
 		x = uint16(chip_8.Vx[x])
 		y = uint16(chip_8.Vx[y])
 
 		var pix uint16
-		height := chip_8.opcode & 0x000F // Pegamos o N do "DXYN"
-		chip_8.Vx[0xF] = 0
+		height := chip_8.opcode & 0x000F // Pegamos o N do "DXYN" - Indica numero de linhas
+		chip_8.Vx[0xF] = 0               // Reseta flag de colisão
 
+		// A logica do loop se baseia em pegar um determinado numero de linhas (N)
+		// irmos bit por bit dessas linhas e verificar se eles estão ligados (1) ou desligados(0)
+		// se eles tiverem ligados precisamos aplicar uma operação xor, invertendo-os
+		// se ele estiver ligado, e no mesmo lugar da tela já possuem pixels ligados, devemos setar a flag de colisão
 		for yPoint := uint16(0); yPoint < height; yPoint++ {
-			pix = uint16(chip_8.memory[chip_8.index+yPoint]) // Começamos no endereço que está no index
-			for xPoint := uint16(0); xPoint < 8; xPoint++ {  // Each sprite is 8 units wide
-				ind := (x + xPoint + ((y + yPoint) * 64))
+			pix = uint16(chip_8.memory[chip_8.index+yPoint]) // Começamos no endereço que está no index, assim como manda a doc.
+			for xPoint := uint16(0); xPoint < 8; xPoint++ {  // Cada sprite tem 8 bits de tamanho
+				ind := (x + xPoint + ((y + yPoint) * 64)) // Posição atual na tela - 64 é o numero de linhas
 				if ind > uint16(len(chip_8.GetGraphics())) {
 					continue
 				}
 				if (pix & (0x80 >> xPoint)) != 0 { // ex: 1010101 & 1000000 -> 1010101 & 0100000 -> ....  verifica se cada pixel esta setado
-					if chip_8.GetGraphics()[ind] == 1 { // Pixel Collision
-						chip_8.Vx[0xF] = 1 // Set Collision
+					if chip_8.GetGraphics()[ind] == 1 { // Verifica Pixel Collision
+						chip_8.Vx[0xF] = 1 // Seta Colisão como verdadeira
 					}
-					chip_8.gfx[ind] ^= 1 // wraps around the opposite side
+					chip_8.gfx[ind] ^= 1 // aplica a operação xor na tela
 				}
 			}
 		}
 
-		chip_8.drawFlag = true
+		chip_8.drawFlag = true // Comando para atualizar a tela
 		chip_8.program_counter += 2
 	case 0xE000:
 		// Bitmask com 8 primeiros bits
 		switch chip_8.opcode & 0x00FF {
 		case 0x009E:
 			// EX9E -> Pula a proxima instrução se a tecla correspondente ao valor que está no registro Vx é pressionada
+			if chip_8.key[chip_8.Vx[x]] == 1 {
+				chip_8.program_counter += 4
+
+				chip_8.key[chip_8.Vx[x]] = 0
+			} else {
+				chip_8.program_counter += 2
+			}
+
 		case 0x00A1:
 			// EXA1 -> Pula a proxima instrução se a tecla correspondente ao valor que está no registro Vx não é pressionada
+			if chip_8.key[chip_8.Vx[x]] == 0 {
+				chip_8.program_counter += 4
+
+			} else {
+				chip_8.key[chip_8.Vx[x]] = 0
+				chip_8.program_counter += 2
+			}
+
 		}
 	case 0xF000:
 		// Bitmask com 8 primeiros bits
 		switch chip_8.opcode & 0x00FF {
 		case 0x0007:
 			// FX07 -> Guarda o valor atual do delay timer no registrador Vx
+			chip_8.Vx[x] = chip_8.delayTimer
+			chip_8.program_counter += 2
 		case 0x000A:
 			// FX0A -> Aguarda uma tecla ser pressionada para guardar o resultado no registrador VX
+			for index, key := range chip_8.key {
+				if key != 0 { // keypress
+					chip_8.Vx[x] = byte(index)
+					chip_8.program_counter += 2
+					break
+				}
+			}
+			chip_8.key[chip_8.Vx[x]] = 0
 		case 0x0015:
 			// FX15 -> Seta o Delay timer para o valor do registro Vx
+			chip_8.delayTimer = chip_8.Vx[x]
+
+			chip_8.program_counter += 2
 		case 0x0018:
 			// FX18 -> Seta o valor do sound timer para o valor do registro Vx
+			chip_8.soundTimer = chip_8.Vx[x]
+
+			chip_8.program_counter += 2
 		case 0x001E:
 			// FX1E -> Adiciona o valor que esta no registrador Vx no registro I(ndex)
+			chip_8.index += uint16(chip_8.Vx[x])
+
+			chip_8.program_counter += 2
 		case 0x0029:
 			// FX29 -> Seta o Valor i(ndex) para o endereço de memoria do sprite correspondente ao digito hexadecimal guardado em Vx
+			chip_8.index = uint16(chip_8.Vx[x]) * 5
+
+			chip_8.program_counter += 2
 		case 0x0033:
 			// FX33 -> Store the binary-coded decimal equivalent of the value stored in register VX at addresses I, I+1, and I+2
+			chip_8.memory[chip_8.index] = chip_8.Vx[x] / 100          // places the hundreds digit in memory at location in I
+			chip_8.memory[chip_8.index+1] = (chip_8.Vx[x] / 10) % 10  // places the tens digit at location I+1
+			chip_8.memory[chip_8.index+2] = (chip_8.Vx[x] % 100) % 10 // places the ones digit at location I+2
+
+			chip_8.program_counter += 2
 		case 0x0055:
 			// FX55 -> Store the values of registers V0 to VX inclusive in memory starting at address I
 			// I is set to I + X + 1 after operation
+			for reg_index := uint16(0); reg_index <= x; reg_index++ {
+				chip_8.memory[chip_8.index+reg_index] = chip_8.Vx[reg_index]
+			}
+
+			chip_8.program_counter += 2
 		case 0x0065:
 			// FX65 -> Fill registers V0 to VX inclusive with the values stored in memory starting at address I
 			// I is set to I + X + 1 after operation
+			for reg_index := uint16(0); reg_index <= x; reg_index++ {
+				chip_8.Vx[reg_index] = chip_8.memory[chip_8.index+reg_index]
+			}
+			chip_8.program_counter += 2
 		default:
 			fmt.Printf("unknown opcode: %x\n", chip_8.opcode&0x00FF)
 		}
