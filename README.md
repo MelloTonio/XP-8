@@ -26,17 +26,13 @@ Current sources:
 - [chip-8 instruction set](http://www.multigesture.net/wp-content/uploads/mirror/goldroad/chip8_instruction_set.shtml)
 
 
-## Installation
-```
-go install github.com/mellotonio/go-chip8
-
-```
 ## Usage
-### Run this command in the console
+### Run
 ```
+git init
+git clone https://github.com/MelloTonio/XP-8.git
 ./Build/build
 ```
-
 
 
 ### Show your support
