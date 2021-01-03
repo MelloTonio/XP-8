@@ -89,6 +89,7 @@ func (chip_8 *chip_8_VM) Run() {
 			}
 			break
 		case <-chip_8.Shutdown:
+			break
 		}
 		break
 	}
@@ -437,6 +438,7 @@ func (chip_8 *chip_8_VM) DrawFlag() bool {
 func (chip_8 *chip_8_VM) SetKeyDown(index byte) {
 	chip_8.key[index] = 1
 }
+
 func (chip_8 *chip_8_VM) ManageAudio() {
 	f, err := os.Open("assets/beep.mp3")
 	if err != nil {
@@ -459,9 +461,9 @@ func (chip_8 *chip_8_VM) ManageAudio() {
 	}
 }
 
-// HandleKeyInput TODO: doc
 func (chip_8 *chip_8_VM) HandleKeyInput() {
 	for i, key := range chip_8.Window.KeyMap {
+		// Se uma tecla é pressionada
 		if chip_8.Window.JustReleased(key) {
 			if chip_8.Window.KeysDown[i] != nil {
 				chip_8.Window.KeysDown[i].Stop()
@@ -486,6 +488,7 @@ func (chip_8 *chip_8_VM) HandleKeyInput() {
 	}
 }
 
+// Se drawflag == true, precisamos renderizar os graficos de novo
 func (chip_8 *chip_8_VM) drawOrUpdate() {
 	if chip_8.DrawFlag() {
 		chip_8.Window.DrawGraphics(chip_8.GetGraphics())
@@ -494,12 +497,14 @@ func (chip_8 *chip_8_VM) drawOrUpdate() {
 	}
 }
 
+// Decrementa o delay timer
 func (chip_8 *chip_8_VM) delayTimerTick() {
 	if chip_8.DelayTimer > 0 {
 		chip_8.DelayTimer--
 	}
 }
 
+// Manipula o soundtimer, utiliza channels para passar info
 func (chip_8 *chip_8_VM) soundTimerTick() {
 	if chip_8.SoundTimer > 0 {
 		if chip_8.SoundTimer == 1 {
@@ -509,6 +514,7 @@ func (chip_8 *chip_8_VM) soundTimerTick() {
 	}
 }
 
+// Se recebido sinal de shutdown, fecha o sinal de audio.
 func (chip_8 *chip_8_VM) signalShutdown(msg string) {
 
 	close(chip_8.audioChan)
