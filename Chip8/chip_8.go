@@ -4,7 +4,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/rand"
+	"os"
+	"time"
 
+	"github.com/faiface/beep/mp3"
+	"github.com/faiface/beep/speaker"
 	"github.com/mellotonio/go-chip8/Chip8/Display"
 )
 
@@ -21,16 +25,31 @@ type chip_8_VM struct {
 	program_counter uint16        // Usado para guardar o endereço atual da instrução que está sendo executada (0x000 - 0 => 0xFFF - 4095)
 	stack           [16]uint16    // Stack para "acumular" instruções
 	stack_pointer   uint16        // Registro que guarda o ultimo endereço requisitado na pilha
-	delayTimer      byte          // 8-bit delay timer que conta de 60 até 0 (hertz)
-	soundTimer      byte          // 8-bit sound timer que conta de 60 até 0 (hertz)
+	DelayTimer      byte          // 8-bit delay timer que conta de 60 até 0 (hertz)
+	SoundTimer      byte          // 8-bit sound timer que conta de 60 até 0 (hertz)
 	timerSpeed      uint16        // timer speed
 	gfx             [64 * 32]byte // Pixels da tela
 	key             [16]byte      // "16-key hexadecimal keypad for input"
 	drawFlag        bool
+	Window          *Display.Window
+	Clock           *time.Ticker
+	BeepChan        chan struct{}
+	audioChan       chan struct{} // channel for pushing audio events
+	Shutdown        chan struct{} // shutdown signal channel
 }
+
+const keyRepeatDur = time.Second / 5
+const refreshRate = 180
 
 // Inicialização do Chip8 com a fonte inicializada nos primeiros 80 bytes
 func Start(pathToROM string) (*chip_8_VM, error) {
+
+	window, err := Display.NewWindow()
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
 	chip8_INIT := chip_8_VM{
 		memory:          [4096]byte{},
@@ -39,6 +58,10 @@ func Start(pathToROM string) (*chip_8_VM, error) {
 		stack:           [16]uint16{},
 		gfx:             [64 * 32]byte{},
 		key:             [16]byte{},
+		Window:          window,
+		Clock:           time.NewTicker(time.Second / 300),
+		audioChan:       make(chan struct{}),
+		Shutdown:        make(chan struct{}),
 	}
 
 	chip8_INIT.loadFontSet()
@@ -50,6 +73,26 @@ func Start(pathToROM string) (*chip_8_VM, error) {
 
 	return &chip8_INIT, nil
 
+}
+
+func (chip_8 *chip_8_VM) Run() {
+	for {
+		select {
+		case <-chip_8.Clock.C:
+			if !chip_8.Window.Closed() {
+				chip_8.MachineCycle()
+				chip_8.drawOrUpdate()
+				chip_8.HandleKeyInput()
+				chip_8.delayTimerTick()
+				chip_8.soundTimerTick()
+				continue
+			}
+			break
+		case <-chip_8.Shutdown:
+		}
+		break
+	}
+	chip_8.signalShutdown("Received signal - gracefully shutting down...")
 }
 
 // Carrega a font nos primeiros 80 bytes de memoria
@@ -72,7 +115,7 @@ func (chip_8 *chip_8_VM) LoadROM(path string) error {
 	}
 
 	for i := 0; i < len(rom); i++ {
-		chip_8.memory[0x50+i] = rom[i] // Memoria começa 0x50 (80) + x, tirando espaço reservado para as fontes (80 bytes)
+		chip_8.memory[0x200+i] = rom[i] // Memoria começa 0x200 (512) + x, tirando espaço reservado para as fontes (512 bits)
 	}
 
 	return nil
@@ -88,6 +131,7 @@ func (chip_8 *chip_8_VM) MachineCycle() {
 	chip_8.drawFlag = false
 
 	chip_8.parseOpcode()
+
 }
 
 func (chip_8 *chip_8_VM) parseOpcode() {
@@ -201,7 +245,7 @@ func (chip_8 *chip_8_VM) parseOpcode() {
 		case 0x0005:
 			// 8XY5 -> Set Vx = Vx - Vy, set VF = NOT borrow.
 			// Se Vx > Vy, a flag sera setada = 1, senão a flag será 0, resultado guardado em Vx
-			if chip_8.Vx[y] > chip_8.Vx[x] {
+			if chip_8.Vx[x] > chip_8.Vx[y] {
 				chip_8.Vx[0xF] = 1
 			} else {
 				chip_8.Vx[0xF] = 0
@@ -217,18 +261,18 @@ func (chip_8 *chip_8_VM) parseOpcode() {
 		case 0x0007:
 			// 8XY7 -> Set Vx = Vy - Vx, set VF = NOT borrow.
 			// Vy > Vx, flag = 1, senão flag = 0, então Vx - Vy, guarda em Vx
-			if chip_8.Vx[x] > chip_8.Vx[y] {
+			if chip_8.Vx[y] > chip_8.Vx[x] {
 				chip_8.Vx[0xF] = 1
 			} else {
 				chip_8.Vx[0xF] = 0
 			}
-			chip_8.Vx[x] = chip_8.Vx[y] - chip_8.Vx[x]
+			chip_8.Vx[x] = chip_8.Vx[x] - chip_8.Vx[y]
 			chip_8.program_counter += 2
 
 		case 0x000E:
 			// 8XYE -> Store the value of register VY shifted left one bit in register VX
 			// Set register VF to the most significant bit prior to the shift
-			chip_8.Vx[x] = chip_8.Vx[x] << 1     // multiply by 2
+			chip_8.Vx[x] = chip_8.Vx[y] << 1     // multiply by 2
 			chip_8.Vx[0xF] = chip_8.Vx[y] & 0x80 // most significant bit (bitmasking)
 			chip_8.program_counter += 2
 
@@ -316,7 +360,7 @@ func (chip_8 *chip_8_VM) parseOpcode() {
 		switch chip_8.opcode & 0x00FF {
 		case 0x0007:
 			// FX07 -> Guarda o valor atual do delay timer no registrador Vx
-			chip_8.Vx[x] = chip_8.delayTimer
+			chip_8.Vx[x] = chip_8.DelayTimer
 			chip_8.program_counter += 2
 		case 0x000A:
 			// FX0A -> Aguarda uma tecla ser pressionada para guardar o resultado no registrador VX
@@ -330,12 +374,12 @@ func (chip_8 *chip_8_VM) parseOpcode() {
 			chip_8.key[chip_8.Vx[x]] = 0
 		case 0x0015:
 			// FX15 -> Seta o Delay timer para o valor do registro Vx
-			chip_8.delayTimer = chip_8.Vx[x]
+			chip_8.DelayTimer = chip_8.Vx[x]
 
 			chip_8.program_counter += 2
 		case 0x0018:
 			// FX18 -> Seta o valor do sound timer para o valor do registro Vx
-			chip_8.soundTimer = chip_8.Vx[x]
+			chip_8.SoundTimer = chip_8.Vx[x]
 
 			chip_8.program_counter += 2
 		case 0x001E:
@@ -382,6 +426,93 @@ func (chip_8 *chip_8_VM) parseOpcode() {
 // GetGraphics TODO: doc
 func (chip_8 *chip_8_VM) GetGraphics() [64 * 32]byte {
 	return chip_8.gfx
+}
+
+func (chip_8 *chip_8_VM) DrawFlag() bool {
+	return chip_8.drawFlag
+}
+
+// SetKeyDown marks the specified key as down.
+// Once read, the key state will be reset to up
+func (chip_8 *chip_8_VM) SetKeyDown(index byte) {
+	chip_8.key[index] = 1
+}
+func (chip_8 *chip_8_VM) ManageAudio() {
+	f, err := os.Open("assets/beep.mp3")
+	if err != nil {
+		return
+	}
+
+	streamer, format, err := mp3.Decode(f)
+	if err != nil {
+		return
+	}
+	defer streamer.Close()
+
+	speaker.Init(
+		format.SampleRate,
+		format.SampleRate.N(time.Second/10),
+	)
+
+	for range chip_8.audioChan {
+		speaker.Play(streamer)
+	}
+}
+
+// HandleKeyInput TODO: doc
+func (chip_8 *chip_8_VM) HandleKeyInput() {
+	for i, key := range chip_8.Window.KeyMap {
+		if chip_8.Window.JustReleased(key) {
+			if chip_8.Window.KeysDown[i] != nil {
+				chip_8.Window.KeysDown[i].Stop()
+				chip_8.Window.KeysDown[i] = nil
+			}
+		} else if chip_8.Window.JustPressed(key) {
+			if chip_8.Window.KeysDown[i] == nil {
+				chip_8.Window.KeysDown[i] = time.NewTicker(keyRepeatDur)
+			}
+			chip_8.SetKeyDown(byte(i))
+		}
+
+		if chip_8.Window.KeysDown[i] == nil {
+			continue
+		}
+
+		select {
+		case <-chip_8.Window.KeysDown[i].C:
+			chip_8.SetKeyDown(byte(i))
+		default:
+		}
+	}
+}
+
+func (chip_8 *chip_8_VM) drawOrUpdate() {
+	if chip_8.DrawFlag() {
+		chip_8.Window.DrawGraphics(chip_8.GetGraphics())
+	} else {
+		chip_8.Window.UpdateInput()
+	}
+}
+
+func (chip_8 *chip_8_VM) delayTimerTick() {
+	if chip_8.DelayTimer > 0 {
+		chip_8.DelayTimer--
+	}
+}
+
+func (chip_8 *chip_8_VM) soundTimerTick() {
+	if chip_8.SoundTimer > 0 {
+		if chip_8.SoundTimer == 1 {
+			chip_8.audioChan <- struct{}{}
+		}
+		chip_8.SoundTimer--
+	}
+}
+
+func (chip_8 *chip_8_VM) signalShutdown(msg string) {
+
+	close(chip_8.audioChan)
+	chip_8.Shutdown <- struct{}{}
 }
 
 func (chip_8 *chip_8_VM) debug() {
