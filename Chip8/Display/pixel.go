@@ -45,7 +45,7 @@ type Window struct {
 // https://github.com/faiface/pixel/wiki/Creating-a-Window
 func NewWindow() (*Window, error) {
 	cfg := pixelgl.WindowConfig{
-		Title:  "Chip-8",
+		Title:  "XP-8",
 		Bounds: pixel.R(0, 0, 1024, 768), // Rectangle minX, minY, maxX, maxY
 		VSync:  true,
 	}
