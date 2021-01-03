@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	fmt.Printf("WELCOME to XP-8\n\nPONG COMMANDS:\nPlayer1: Keyboard [1] [Q]\nPlayer2: Keyboard [4] [R]\n\nSPACE INVADERS: Keyboard [Q] [W] [E]\n1. Pong\n2. Space Invaders\n\n")
+	fmt.Printf("WELCOME to XP-8\n\nPONG COMMANDS:\nPlayer1: Keyboard [1] [Q]\nPlayer2: Keyboard [4] [R]\n\nSPACE INVADERS: Keyboard [Q] [W] [E]\n1. Pong\n2. Space Invaders\n3. Tetris\n\n")
 	pixelgl.Run(mainFunc) // Pixelgl precisa do controle da função principal
 
 }
@@ -25,6 +25,8 @@ func mainFunc() {
 		pathToROM = "./Chip8/roms/pong.ch8"
 	} else if number == 2 {
 		pathToROM = "./Chip8/roms/Space Invaders [David Winter].ch8"
+	} else if number == 3 {
+		pathToROM = "./Chip8/roms/tetris.ch8"
 	}
 
 	// chip_8, err := Chip8.Start(pathToROM)
